@@ -3,7 +3,10 @@ const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 const aiService = require("../services/ai.service");
-const { DEFAULT_PAGE_SIZE } = require("../constants");
+const { DEFAULT_PAGE_SIZE, QUIZ_DIFFICULTY } = require("../constants");
+
+const MIN_QUESTIONS = 1;
+const MAX_QUESTIONS = 15;
 
 // @route POST /api/v1/quizzes  (manual creation by teacher)
 const createQuiz = asyncHandler(async (req, res) => {
@@ -12,20 +15,41 @@ const createQuiz = asyncHandler(async (req, res) => {
 });
 
 // @route POST /api/v1/quizzes/generate  (AI-generated quiz)
+// Body: { subject, topic?, difficulty?, count?, title?, course?, examTags? }
+// The quiz is only saved AFTER the AI returned valid questions. On any AI failure
+// this responds with a safe { success:false, message, errorCode } and saves nothing.
 const generateQuiz = asyncHandler(async (req, res) => {
-  const { title, subject, topic, difficulty = "medium", count = 5, course, examTags } = req.body;
+  const body = req.body || {};
 
+  const subject = typeof body.subject === "string" ? body.subject.trim() : "";
+  const topic = typeof body.topic === "string" ? body.topic.trim() : "";
   if (!subject) throw new ApiError(400, "Subject is required to generate a quiz");
+  if (subject.length > 100) throw new ApiError(400, "Subject must be 100 characters or fewer");
+  if (topic.length > 150) throw new ApiError(400, "Topic must be 150 characters or fewer");
 
+  const difficulty = body.difficulty === undefined || body.difficulty === "" ? QUIZ_DIFFICULTY.MEDIUM : body.difficulty;
+  if (!Object.values(QUIZ_DIFFICULTY).includes(difficulty)) {
+    throw new ApiError(400, `Difficulty must be one of: ${Object.values(QUIZ_DIFFICULTY).join(", ")}`);
+  }
+
+  const count = body.count === undefined || body.count === "" || body.count === null ? 5 : Number(body.count);
+  if (!Number.isInteger(count) || count < MIN_QUESTIONS || count > MAX_QUESTIONS) {
+    throw new ApiError(400, `Number of questions must be a whole number between ${MIN_QUESTIONS} and ${MAX_QUESTIONS}`);
+  }
+
+  const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 150) : undefined;
+  const examTags = Array.isArray(body.examTags) ? body.examTags.filter((t) => typeof t === "string").slice(0, 10) : [];
+
+  // Throws an AiServiceError (safe message + errorCode) if generation fails; never returns sample questions.
   const questions = await aiService.generateQuizQuestions({ subject, topic, difficulty, count });
 
   const quiz = await Quiz.create({
     title: title || `${subject}${topic ? ` - ${topic}` : ""} Practice Quiz`,
     createdBy: req.user._id,
-    course,
+    course: body.course,
     subject,
     topic,
-    examTags: examTags || [],
+    examTags,
     difficulty,
     isAIGenerated: true,
     questions,

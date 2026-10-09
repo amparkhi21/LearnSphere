@@ -78,7 +78,7 @@ Auth: Send `Authorization: Bearer <token>` header (token returned from register/
 | GET | `/quizzes` | Public | List quizzes (answers hidden) |
 | GET | `/quizzes/:id` | Public | Get quiz (answers hidden) |
 | POST | `/quizzes` | Teacher | Manually create a quiz |
-| POST | `/quizzes/generate` | Private | **AI-generate** a quiz (body: subject, topic, difficulty, count) |
+| POST | `/quizzes/generate` | Private | **AI-generate** a quiz. Body: `subject` (required, <=100 chars), `topic` (<=150), `difficulty` (`easy`/`medium`/`hard`, default `medium`), `count` (1-15, default 5). Returns `201` with the saved quiz, or `{success:false, message, errorCode}` (400 invalid input, 429/502/503/504/422 AI errors - see README). Never returns sample questions. |
 | POST | `/quiz-attempts` | Private | Submit answers, get graded result + explanations |
 | GET | `/quiz-attempts/mine` | Private | Get own attempt history |
 | GET | `/quiz-attempts/:id` | Private (owner) | Get single attempt detail |
@@ -116,7 +116,7 @@ Auth: Send `Authorization: Bearer <token>` header (token returned from register/
 ## AI (`/ai`)
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
-| GET | `/ai/status` | Public | Check if a real AI provider key is configured |
+| GET | `/ai/status` | Public | `{configured, provider, model, missingEnvVar?}` - never includes a key |
 | POST | `/ai/recommend-resources` | Private | Get AI resource suggestions (body: subject, examTarget, recentTopics) |
 | POST | `/ai/course-outline` | Private | Get AI-generated course module outline (body: title, subject, level) |
 | POST | `/ai/doubt-assist` | Private | Get an AI-drafted answer to a student doubt (body: question, subject) |

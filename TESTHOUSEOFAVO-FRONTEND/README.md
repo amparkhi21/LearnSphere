@@ -91,3 +91,14 @@ free tiers all work well) once you point `VITE_API_BASE_URL` at your deployed ba
   `VITE_API_BASE_URL` in `.env` matches its address.
 - AI features (study plan, quiz generation, doubt assist, course outline) work immediately with
   the backend's built-in fallback templates — no AI key required to demo them.
+
+## Deploying on Vercel
+
+1. Set `VITE_API_BASE_URL` (Project -> Settings -> Environment Variables) to your backend, e.g.
+   `https://your-backend.onrender.com/api/v1`, then **redeploy** (Vite reads it at build time).
+2. `vercel.json` rewrites all routes to `index.html` so deep links like `/quizzes/<id>` survive a refresh.
+3. On the backend (Render) set `CLIENT_URL` to your exact Vercel URL so CORS allows the browser.
+4. AI keys belong on the backend only - never add them to the frontend env.
+
+Run `npm test` for the quiz-data validation tests.
+

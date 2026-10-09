@@ -101,17 +101,55 @@ protected routes (e.g. `/api/v1/study-plans/generate`).
 
 ---
 
-## 6. Enabling AI features (optional, free)
+## 6. Enabling AI features (free tier)
 
-The AI syllabus/quiz/recommendation endpoints work out of the box with template-based
-fallback content — but for **real AI-generated** output, get one free API key:
+**AI quiz generation requires a working AI provider key.** It never shows sample/fake
+questions: if the AI is unavailable, the API returns a clear error and the app shows a
+Retry button. (Study plans, resource ideas, course outlines and doubt answers keep their
+built-in template fallbacks when no key is set.)
 
-- **Gemini (recommended, generous free tier):** https://aistudio.google.com/app/apikey
-  - Set in `.env`: `AI_PROVIDER=gemini` and `GEMINI_API_KEY=your_key`
-- **Groq (free, very fast Llama models):** https://console.groq.com/keys
-  - Set in `.env`: `AI_PROVIDER=groq` and `GROQ_API_KEY=your_key`
+Get one free API key and set it **on the server only** (never in the frontend):
 
-No code changes needed — just restart the server after editing `.env`.
+- **Gemini (recommended):** https://aistudio.google.com/app/apikey
+  - `AI_PROVIDER=gemini` and `GEMINI_API_KEY=<your key>`
+- **Groq:** https://console.groq.com/keys
+  - `AI_PROVIDER=groq` and `GROQ_API_KEY=<your key>`
+
+| Variable | Required | Notes |
+|---|---|---|
+| `AI_PROVIDER` | no | `gemini` or `groq`. If empty, auto-detected from whichever key is set. |
+| `GEMINI_API_KEY` / `GROQ_API_KEY` | one of them | Server-side only. Sent in a request header, never logged. |
+| `GEMINI_MODEL` / `GROQ_MODEL` | no | Override the model ID. Defaults: `gemini-3.6-flash`, `openai/gpt-oss-20b`. Providers retire models over time, so change these if the API says the model is unavailable. |
+| `AI_TIMEOUT_MS` | no | How long to wait for the provider (default `25000`). |
+| `CLIENT_URL` / `CLIENT_URLS` | yes (prod) | Your exact frontend origin(s) for CORS, e.g. `https://your-app.vercel.app`. |
+
+Local: edit `.env`, restart the server. **Render:** Dashboard -> your service -> *Environment* ->
+add/edit the variables -> save (Render redeploys).
+
+### Checking / troubleshooting
+
+`GET /api/v1/ai/status` reports `{ configured, provider, model, missingEnvVar? }` and never
+includes a key. Quiz-generation failures return `{ success:false, message, errorCode }`:
+
+| `errorCode` | HTTP | Meaning / fix |
+|---|---|---|
+| `AI_NOT_CONFIGURED` | 503 | Key env var missing. Server logs name the exact variable. |
+| `AI_KEY_INVALID` | 503 | Provider rejected the key (wrong, revoked, or API not enabled). Create a new key. |
+| `AI_MODEL_UNAVAILABLE` | 503 | Model retired/renamed. Set `GEMINI_MODEL` / `GROQ_MODEL`. |
+| `AI_RATE_LIMITED` | 429 | Provider quota/rate limit hit. Wait and retry. |
+| `AI_TIMEOUT` | 504 | Provider too slow. Retry, or raise `AI_TIMEOUT_MS`. |
+| `AI_UNAVAILABLE` / `AI_BAD_RESPONSE` | 502 | Provider outage or unusable output (already retried once). |
+| `AI_CONTENT_BLOCKED` | 422 | Provider's safety filter declined the topic. |
+
+Older versions of the app saved fake "[Sample] ... Configure GEMINI_API_KEY ..." quizzes into the
+database. Remove them once with:
+
+```bash
+npm run cleanup:sample-quizzes             # dry run - lists them
+npm run cleanup:sample-quizzes -- --delete # delete them (and their attempts)
+```
+
+Run the tests with `npm test` (no network or API key needed).
 
 ---
 

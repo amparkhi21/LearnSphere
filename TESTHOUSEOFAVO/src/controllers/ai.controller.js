@@ -32,7 +32,8 @@ const doubtAssist = asyncHandler(async (req, res) => {
 
 // @route GET /api/v1/ai/status
 const getAIStatus = asyncHandler(async (req, res) => {
-  res.status(200).json(new ApiResponse(200, { configured: aiService.isAIConfigured() }, "AI status fetched"));
+  // { configured, provider, model, missingEnvVar? } - never includes any key
+  res.status(200).json(new ApiResponse(200, aiService.getAIStatus(), "AI status fetched"));
 });
 
 module.exports = { recommendResources, generateCourseOutline, doubtAssist, getAIStatus };

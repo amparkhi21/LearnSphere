@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { CheckCircle2, XCircle, Trophy } from "lucide-react";
+import { CheckCircle2, XCircle, Trophy, AlertCircle, RefreshCw } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import EmptyState from "../components/ui/EmptyState";
 import { PageLoader } from "../components/ui/Spinner";
 import { quizApi, quizAttemptApi } from "../api/quiz.api";
 import { useAuth } from "../context/AuthContext";
+import { assertValidQuiz } from "../utils/quizValidation";
 
 const QuizAttemptPage = () => {
   const { id } = useParams();
@@ -13,18 +15,28 @@ const QuizAttemptPage = () => {
   const navigate = useNavigate();
   const [quiz, setQuiz] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [startTime] = useState(Date.now());
 
-  useEffect(() => {
+  const loadQuiz = useCallback(() => {
+    setLoading(true);
+    setLoadError("");
     quizApi
       .getOne(id)
-      .then(setQuiz)
-      .catch(() => toast.error("Quiz not found"))
+      .then((data) => setQuiz(assertValidQuiz(data))) // never render invalid / placeholder question data
+      .catch((err) => {
+        setQuiz(null);
+        setLoadError(err?.message || "Could not load this quiz.");
+      })
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    loadQuiz();
+  }, [loadQuiz]);
 
   const handleSelect = (questionId, optionIndex) => {
     setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
@@ -52,7 +64,29 @@ const QuizAttemptPage = () => {
   };
 
   if (loading) return <Layout><PageLoader /></Layout>;
-  if (!quiz) return null;
+  if (loadError || !quiz) {
+    return (
+      <Layout>
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-14">
+          <EmptyState
+            icon={AlertCircle}
+            title="Couldn't open this quiz"
+            description={loadError || "This quiz could not be loaded."}
+            action={
+              <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                <button onClick={loadQuiz} className="btn-primary justify-center">
+                  <RefreshCw size={15} /> Retry
+                </button>
+                <button onClick={() => navigate("/quizzes")} className="btn-secondary justify-center">
+                  Back to quizzes
+                </button>
+              </div>
+            }
+          />
+        </div>
+      </Layout>
+    );
+  }
 
   if (result) {
     return (
