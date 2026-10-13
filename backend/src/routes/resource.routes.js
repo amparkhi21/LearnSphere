@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   uploadResource,
+  updateResource,
   getResources,
   getResourceById,
   trackDownload,
@@ -16,6 +17,7 @@ router.get("/", getResources);
 router.get("/:id", getResourceById);
 router.post("/:id/download", trackDownload);
 router.post("/", protect, restrictTo("teacher"), upload.single("file"), uploadResource);
+router.patch("/:id", protect, restrictTo("teacher"), upload.single("file"), updateResource);
 router.delete("/:id", protect, deleteResource);
 
 module.exports = router;

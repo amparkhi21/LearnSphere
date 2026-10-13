@@ -115,6 +115,7 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/teacher/courses/:courseId/edit" element={<ProtectedRoute roles={["teacher", "admin"]}><CreateCourse /></ProtectedRoute>} />
       <Route path="/teacher/live-classes" element={<ProtectedRoute roles={["teacher", "admin"]}><TeacherLiveClasses /></ProtectedRoute>} />
 
       {/* Admin */}

@@ -15,6 +15,8 @@ let updateResults = [];
 let updateFilters = [];
 let deletedRooms = [];
 let lastFindOneFilter = null;
+let lastRollbackFilter = null;
+let liveKitCreateRoomError = null;
 
 const queryResult = (value) => ({
   select: async () => value,
@@ -32,10 +34,14 @@ mockModel("../src/models/liveClass.model", {
     lastStudentClassFilter = filter;
     return { select() { return this; }, populate() { return this; }, sort: async () => listedClasses };
   },
-  findOne: (filter) => { lastFindOneFilter = filter; return queryResult(liveClassRecord); },
+  findOne: (filter) => {
+    lastFindOneFilter = filter;
+    const matchesOwner = !filter.teacher || String(liveClassRecord?.teacher) === String(filter.teacher);
+    return queryResult(matchesOwner ? liveClassRecord : null);
+  },
   findById: () => queryResult(liveClassRecord),
   findOneAndUpdate: (filter) => { lastClassFilter = filter; updateFilters.push(filter); return queryResult(updateResults.shift() || null); },
-  updateOne: async () => {},
+  updateOne: async (filter) => { lastRollbackFilter = filter; },
 });
 mockModel("../src/models/course.model", { findOne: async (filter) => { lastCourseFilter = filter; return ownedCourse; } });
 mockModel("../src/models/enrollment.model", {
@@ -44,7 +50,7 @@ mockModel("../src/models/enrollment.model", {
 });
 class LiveKitConfigurationError extends Error {}
 mockModel("../src/services/livekit.service", {
-  createRoom: async () => {},
+  createRoom: async () => { if (liveKitCreateRoomError) throw liveKitCreateRoomError; },
   deleteRoom: async (room) => { deletedRooms.push(room); },
   createParticipantToken: async (args) => { lastTokenOptions = args; return "test-token"; },
   LiveKitConfigurationError,
@@ -74,6 +80,16 @@ test.beforeEach(() => {
   updateFilters = [];
   deletedRooms = [];
   lastFindOneFilter = null;
+  lastRollbackFilter = null;
+  liveKitCreateRoomError = null;
+});
+
+test("teacher class listing filters on the authenticated owner for every status", async () => {
+  listedClasses = ["live", "scheduled", "completed", "cancelled"].map((status) => ({ status, teacher: "teacherA" }));
+  const { status, payload } = await call(controller.getTeacherClasses);
+  assert.equal(status, 200);
+  assert.deepEqual(lastStudentClassFilter, { teacher: "teacherA" });
+  assert.deepEqual(payload.data.map((item) => item.status), ["live", "scheduled", "completed", "cancelled"]);
 });
 
 test("teacher scheduling stores authenticated owner and verifies course assignment", async () => {
@@ -200,6 +216,21 @@ test("a different teacher cannot start a class by changing its ID", async () => 
   const { status } = await call(controller.startClass, { params: { id: "class123" } });
   assert.equal(status, 404);
   assert.deepEqual(lastClassFilter, { _id: "class123", teacher: "teacherA", status: "scheduled" });
+});
+
+test("a different teacher cannot cancel another teacher's class by changing its ID", async () => {
+  liveClassRecord = { _id: "class123", teacher: "teacherB", status: "scheduled" };
+  const { status } = await call(controller.cancelClass, { params: { id: "class123" } });
+  assert.equal(status, 404);
+  assert.deepEqual(lastFindOneFilter, { _id: "class123", teacher: "teacherA" });
+});
+
+test("failed class startup rollback remains scoped to the authenticated teacher", async () => {
+  updateResults = [{ _id: "class123" }, null];
+  liveKitCreateRoomError = new Error("LiveKit unavailable");
+  const { status } = await call(controller.startClass, { params: { id: "class123" } });
+  assert.equal(status, 502);
+  assert.deepEqual(lastRollbackFilter, { _id: "class123", teacher: "teacherA", status: "starting" });
 });
 
 test("authorized teacher can start their scheduled class", async () => {

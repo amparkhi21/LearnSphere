@@ -10,6 +10,9 @@ const resourceSchema = new mongoose.Schema(
     fileUrl: { type: String, default: "" },
     fileSize: { type: Number, default: 0 }, // in KB
     linkUrl: { type: String, default: "" },
+    storageProvider: { type: String, enum: ["", "local", "cloudinary"], default: "" },
+    storagePublicId: { type: String, default: "" },
+    storageResourceType: { type: String, default: "" },
 
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     course: { type: mongoose.Schema.Types.ObjectId, ref: "Course" }, // optional link to a course

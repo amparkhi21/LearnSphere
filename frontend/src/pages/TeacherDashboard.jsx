@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, BookOpen, Users, Star, IndianRupee } from "lucide-react";
+import { Plus, BookOpen, Users, Star, IndianRupee, Archive } from "lucide-react";
+import toast from "react-hot-toast";
 import Layout from "../components/layout/Layout";
 import EmptyState from "../components/ui/EmptyState";
 import { PageLoader } from "../components/ui/Spinner";
@@ -24,6 +25,7 @@ const TeacherDashboard = () => {
   const { user } = useAuth();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [archivingId, setArchivingId] = useState(null);
 
   useEffect(() => {
     courseApi
@@ -32,6 +34,18 @@ const TeacherDashboard = () => {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const handleArchive = async (course) => {
+    if (!window.confirm(`Archive “${course.title}”? Student enrollments will be preserved.`)) return;
+    setArchivingId(course._id);
+    try {
+      await courseApi.remove(course._id);
+      setCourses((current) => current.filter((item) => item._id !== course._id));
+      toast.success("Course archived");
+    } catch (err) {
+      toast.error(err.message || "Could not archive course");
+    } finally { setArchivingId(null); }
+  };
 
   if (loading) return <Layout><PageLoader /></Layout>;
 
@@ -71,16 +85,20 @@ const TeacherDashboard = () => {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {courses.map((c) => (
               <div key={c._id} className="card p-5">
+                <Link to={`/courses/${c.slug || c._id}`} className="block cursor-pointer rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 focus-visible:outline-offset-4">
+                <div className="relative h-32 rounded-xl bg-brand-gradient-soft overflow-hidden flex items-center justify-center mb-3">
+                  <span className="text-4xl font-black text-brand-200">{c.subject?.[0] || "C"}</span>
+                  {c.thumbnail && <img src={c.thumbnail} alt={`${c.title} course cover`} className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+                </div>
                 <div className="flex items-center justify-between mb-2">
                   <span className={`badge ${c.status === "published" ? "badge-green" : "badge-amber"}`}>{c.status}</span>
                   <span className="text-xs text-slate-400">{c.enrollmentCount || 0} students</span>
                 </div>
-                <h3 className="font-semibold text-slate-800 mb-2 line-clamp-2">{c.title}</h3>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-bold text-slate-900">{formatCurrency(c.discountPrice > 0 ? c.discountPrice : c.price)}</span>
-                  <Link to={`/courses/${c.slug || c._id}`} className="text-brand-600 font-semibold text-sm hover:underline">
-                    View
-                  </Link>
+                <h3 className="font-semibold text-slate-800 mb-2 line-clamp-2 hover:text-brand-600">{c.title}</h3>
+                <span className="text-sm font-bold text-slate-900">{formatCurrency(c.discountPrice > 0 ? c.discountPrice : c.price)}</span>
+                </Link>
+                <div className="flex justify-end mt-3">
+                  <button type="button" onClick={() => handleArchive(c)} disabled={archivingId === c._id} className="inline-flex items-center gap-1 text-red-600 font-semibold text-sm hover:underline disabled:opacity-50"><Archive size={14} /> {archivingId === c._id ? "Archiving…" : "Delete"}</button>
                 </div>
               </div>
             ))}

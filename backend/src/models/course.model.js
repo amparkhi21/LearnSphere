@@ -8,6 +8,8 @@ const courseSchema = new mongoose.Schema(
     slug: { type: String, unique: true },
     description: { type: String, required: true },
     thumbnail: { type: String, default: "" },
+    thumbnailPublicId: { type: String, default: "" },
+    thumbnailResourceType: { type: String, default: "" },
 
     teacher: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 

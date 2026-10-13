@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Sparkles, Plus, Trash2 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -9,13 +9,43 @@ import { STREAMS, EXAM_TAGS, LEVELS } from "../utils/constants";
 
 const CreateCourse = () => {
   const navigate = useNavigate();
+  const { courseId } = useParams();
+  const editing = Boolean(courseId);
   const [form, setForm] = useState({
     title: "", description: "", stream: "", subject: "", price: 0, discountPrice: 0,
     level: "beginner", duration: "", examTags: [],
   });
   const [modules, setModules] = useState([]);
+  const [courseStatus, setCourseStatus] = useState("published");
+  const [thumbnailFile, setThumbnailFile] = useState(null);
+  const [existingThumbnail, setExistingThumbnail] = useState("");
+  const [thumbnailPreview, setThumbnailPreview] = useState("");
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(editing);
+
+  useEffect(() => {
+    if (!thumbnailFile) {
+      setThumbnailPreview(existingThumbnail);
+      return undefined;
+    }
+    const previewUrl = URL.createObjectURL(thumbnailFile);
+    setThumbnailPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [thumbnailFile, existingThumbnail]);
+
+  useEffect(() => {
+    if (!editing) return;
+    courseApi.getOne(courseId).then((course) => {
+      setForm({ title: course.title || "", description: course.description || "", stream: course.stream || "", subject: course.subject || "", price: course.price ?? 0, discountPrice: course.discountPrice ?? 0, level: course.level || "beginner", duration: course.duration || "", examTags: course.examTags || [] });
+      setCourseStatus(course.status || "published");
+      setExistingThumbnail(course.thumbnail || "");
+      setModules((course.modules || []).map((module) => ({ ...module, resources: (module.resources || []).map((resource) => typeof resource === "object" ? resource._id : resource) })));
+    }).catch((err) => {
+      toast.error(err.message || "Could not load course");
+      navigate("/teacher/dashboard");
+    }).finally(() => setLoading(false));
+  }, [courseId, editing, navigate]);
 
   const handleGenerateOutline = async () => {
     if (!form.title || !form.subject) return toast.error("Add a title and subject first");
@@ -38,19 +68,47 @@ const CreateCourse = () => {
   const removeModule = (i) => setModules((prev) => prev.filter((_, idx) => idx !== i));
   const addModule = () => setModules((prev) => [...prev, { title: "", description: "" }]);
 
+  const handleThumbnailChange = (event) => {
+    const selected = event.target.files?.[0];
+    if (!selected) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(selected.type)) {
+      toast.error("Choose a JPEG, PNG, or WebP image");
+      event.target.value = "";
+      return;
+    }
+    if (selected.size > 5 * 1024 * 1024) {
+      toast.error("Course images must be 5 MB or smaller");
+      event.target.value = "";
+      return;
+    }
+    event.target.value = "";
+    setThumbnailFile(selected);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const course = await courseApi.create({
+      const payload = {
         ...form,
         price: Number(form.price),
         discountPrice: Number(form.discountPrice),
         modules: modules.map((m, i) => ({ ...m, order: i })),
-        status: "published",
-      });
-      toast.success("Course created successfully!");
-      navigate(`/courses/${course.slug}`);
+        status: courseStatus,
+      };
+      let requestData = payload;
+      if (thumbnailFile) {
+        requestData = new FormData();
+        Object.entries(payload).forEach(([key, value]) => {
+          requestData.append(key, value && typeof value === "object" ? JSON.stringify(value) : String(value));
+        });
+        requestData.append("thumbnail", thumbnailFile);
+      }
+      const course = editing ? await courseApi.update(courseId, requestData) : await courseApi.create(requestData);
+      toast.success(editing ? "Course updated successfully!" : "Course created successfully!");
+      setExistingThumbnail(course.thumbnail || "");
+      setThumbnailFile(null);
+      navigate(`/courses/${course.slug || course._id}`);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -61,10 +119,10 @@ const CreateCourse = () => {
   return (
     <Layout>
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
-        <h1 className="section-title mb-2">Create a new course</h1>
+        <h1 className="section-title mb-2">{editing ? "Edit course" : "Create a new course"}</h1>
         <p className="text-slate-500 mb-8">Fill in the details below — use AI to draft your module outline instantly.</p>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {loading ? <div className="card p-6 text-slate-500">Loading course…</div> : <form onSubmit={handleSubmit} className="space-y-6">
           <div className="card p-6 space-y-4">
             <div>
               <label className="label">Course title</label>
@@ -73,6 +131,19 @@ const CreateCourse = () => {
             <div>
               <label className="label">Description</label>
               <textarea required rows={4} className="input" placeholder="What will students learn?" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Course Image / Course Thumbnail</label>
+              <p className="text-xs text-slate-500 mb-3">Upload a course cover image. Recommended: landscape image with a 16:9 aspect ratio.</p>
+              {thumbnailPreview && <div className="mb-3 overflow-hidden rounded-xl border border-slate-100 aspect-video max-w-xl bg-slate-50"><img src={thumbnailPreview} alt="Course thumbnail preview" className="w-full h-full object-cover" /></div>}
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="btn-secondary cursor-pointer">
+                  <span>{thumbnailFile || existingThumbnail ? "Replace image" : "Choose Image"}</span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleThumbnailChange} />
+                </label>
+                {thumbnailFile && <button type="button" onClick={() => setThumbnailFile(null)} className="btn-ghost text-sm">Remove selected image</button>}
+                {!thumbnailFile && existingThumbnail && <span className="text-xs text-slate-500">Existing image will be kept if you make no selection.</span>}
+              </div>
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
@@ -164,9 +235,9 @@ const CreateCourse = () => {
           </div>
 
           <button type="submit" disabled={saving} className="btn-primary w-full justify-center py-3">
-            {saving ? "Publishing..." : "Publish course"}
+            {saving ? "Saving..." : editing ? "Save changes" : "Publish course"}
           </button>
-        </form>
+        </form>}
       </div>
     </Layout>
   );

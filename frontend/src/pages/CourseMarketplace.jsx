@@ -1,17 +1,52 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import CourseCard from "../components/ui/CourseCard";
 import EmptyState from "../components/ui/EmptyState";
 import { PageLoader } from "../components/ui/Spinner";
 import { courseApi } from "../api/course.api";
+import { enrollmentApi } from "../api/enrollment.api";
+import { useAuth } from "../context/AuthContext";
 import { STREAMS, EXAM_TAGS, LEVELS } from "../utils/constants";
 
 const CourseMarketplace = () => {
+  const { user, loading: authLoading } = useAuth();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ q: "", stream: "", examTag: "", level: "" });
   const [showFilters, setShowFilters] = useState(false);
+  const [enrollmentIds, setEnrollmentIds] = useState(new Set());
+  const [enrollmentStatus, setEnrollmentStatus] = useState("loading");
+  const enrollmentRequestId = useRef(0);
+
+  const refreshEnrollments = useCallback(async () => {
+    const requestId = ++enrollmentRequestId.current;
+    setEnrollmentStatus("loading");
+    try {
+      const enrollments = await enrollmentApi.mine();
+      if (requestId !== enrollmentRequestId.current) return;
+      setEnrollmentIds(new Set((enrollments || []).map((item) => {
+        const enrolledCourse = item.course;
+        return String(typeof enrolledCourse === "object" ? enrolledCourse?._id : enrolledCourse);
+      })));
+      setEnrollmentStatus("ready");
+    } catch (_) {
+      if (requestId === enrollmentRequestId.current) setEnrollmentStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) {
+      enrollmentRequestId.current += 1;
+      return;
+    }
+    setEnrollmentIds(new Set());
+    if (user?.role === "student") refreshEnrollments();
+    else {
+      enrollmentRequestId.current += 1;
+      setEnrollmentStatus("not-applicable");
+    }
+  }, [authLoading, user?._id, user?.id, user?.role, refreshEnrollments]);
 
   const fetchCourses = async () => {
     setLoading(true);
@@ -73,6 +108,8 @@ const CourseMarketplace = () => {
           </div>
         )}
 
+        {enrollmentStatus === "error" && user?.role === "student" && <div role="alert" className="mb-5 flex items-center gap-3 text-sm text-amber-800">Could not check your enrollment status. <button type="button" onClick={refreshEnrollments} className="btn-secondary">Retry</button></div>}
+
         {loading ? (
           <PageLoader />
         ) : courses.length === 0 ? (
@@ -80,7 +117,7 @@ const CourseMarketplace = () => {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {courses.map((c) => (
-              <CourseCard key={c._id} course={c} />
+              <CourseCard key={c._id} course={c} enrollmentStatus={user?.role === "student" ? (enrollmentStatus === "ready" ? (enrollmentIds.has(String(c._id)) ? "enrolled" : "not-enrolled") : enrollmentStatus) : "not-applicable"} />
             ))}
           </div>
         )}

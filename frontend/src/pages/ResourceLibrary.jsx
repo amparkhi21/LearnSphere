@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Search, Upload, FileText, Video, Link2, Image as ImageIcon, Download, Eye } from "lucide-react";
+import { Search, Upload, FileText, Video, Link2, Image as ImageIcon, Download, Eye, Pencil, Trash2 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import EmptyState from "../components/ui/EmptyState";
 import Modal from "../components/ui/Modal";
@@ -20,6 +20,9 @@ const ResourceLibrary = () => {
   const [uploadForm, setUploadForm] = useState({ title: "", description: "", type: "note", stream: "", subject: "", linkUrl: "" });
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [editingResource, setEditingResource] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const fetchResources = async () => {
     setLoading(true);
@@ -46,16 +49,51 @@ const ResourceLibrary = () => {
       const fd = new FormData();
       Object.entries(uploadForm).forEach(([k, v]) => fd.append(k, v));
       if (file) fd.append("file", file);
-      await resourceApi.upload(fd);
-      toast.success("Resource uploaded!");
+      if (editingResource) {
+        await resourceApi.update(editingResource._id, fd);
+        toast.success("Resource updated!");
+      } else {
+        await resourceApi.upload(fd);
+        toast.success("Resource uploaded!");
+      }
       setShowUpload(false);
+      setEditingResource(null);
       setUploadForm({ title: "", description: "", type: "note", stream: "", subject: "", linkUrl: "" });
       setFile(null);
-      fetchResources();
+      await fetchResources();
     } catch (err) {
       toast.error(err.message);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const openEdit = (resource) => {
+    setEditingResource(resource);
+    setUploadForm({ title: resource.title || "", description: resource.description || "", type: resource.type || "note", stream: resource.stream || "", subject: resource.subject || "", linkUrl: resource.linkUrl || "" });
+    setFile(null);
+    setShowUpload(true);
+  };
+
+  const closeForm = () => {
+    if (uploading) return;
+    setShowUpload(false);
+    setEditingResource(null);
+    setFile(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget._id);
+    try {
+      await resourceApi.remove(deleteTarget._id);
+      setResources((current) => current.filter((resource) => resource._id !== deleteTarget._id));
+      toast.success("Resource deleted");
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err.message || "Could not delete resource");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -107,6 +145,8 @@ const ResourceLibrary = () => {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {resources.map((r) => {
               const Icon = typeIcons[r.type] || FileText;
+              const ownerId = typeof r.uploadedBy === "object" ? r.uploadedBy?._id : r.uploadedBy;
+              const isOwner = user?.role === "teacher" && String(user?._id || user?.id) === String(ownerId);
               return (
                 <div key={r._id} className="card p-5">
                   <div className="flex items-start justify-between mb-3">
@@ -127,6 +167,10 @@ const ResourceLibrary = () => {
                   <button onClick={() => handleDownload(r)} className="btn-secondary w-full justify-center text-sm py-2">
                     View / Download
                   </button>
+                  {isOwner && <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={() => openEdit(r)} className="btn-ghost flex-1 justify-center text-sm"><Pencil size={14} /> Edit</button>
+                    <button type="button" onClick={() => setDeleteTarget(r)} className="btn-ghost flex-1 justify-center text-sm text-red-600 hover:text-red-700"><Trash2 size={14} /> Delete</button>
+                  </div>}
                 </div>
               );
             })}
@@ -134,7 +178,7 @@ const ResourceLibrary = () => {
         )}
       </div>
 
-      <Modal open={showUpload} onClose={() => setShowUpload(false)} title="Upload a resource">
+      <Modal open={showUpload} onClose={closeForm} title={editingResource ? "Edit resource" : "Upload a resource"}>
         <form onSubmit={handleUpload} className="space-y-4">
           <div>
             <label className="label">Title</label>
@@ -166,18 +210,22 @@ const ResourceLibrary = () => {
           {uploadForm.type === "link" ? (
             <div>
               <label className="label">URL</label>
-              <input className="input" placeholder="https://..." value={uploadForm.linkUrl} onChange={(e) => setUploadForm({ ...uploadForm, linkUrl: e.target.value })} />
+              <input required type="url" className="input" placeholder="https://..." value={uploadForm.linkUrl} onChange={(e) => setUploadForm({ ...uploadForm, linkUrl: e.target.value })} />
             </div>
           ) : (
             <div>
               <label className="label">File</label>
-              <input type="file" className="input" onChange={(e) => setFile(e.target.files[0])} />
+              {editingResource?.fileUrl && <p className="text-xs text-slate-500 mb-2">Current file will be kept unless you select a replacement.</p>}
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" required={!editingResource || (!editingResource.fileUrl && uploadForm.type !== "link")} className="input" onChange={(e) => setFile(e.target.files[0] || null)} />
             </div>
           )}
           <button type="submit" disabled={uploading} className="btn-primary w-full justify-center py-2.5">
-            {uploading ? "Uploading..." : "Upload"}
+            {uploading ? (editingResource ? "Saving..." : "Uploading...") : editingResource ? "Save changes" : "Upload"}
           </button>
         </form>
+      </Modal>
+      <Modal open={Boolean(deleteTarget)} onClose={() => deletingId || setDeleteTarget(null)} title="Delete resource" footer={<><button type="button" disabled={Boolean(deletingId)} onClick={() => setDeleteTarget(null)} className="btn-secondary">Cancel</button><button type="button" disabled={Boolean(deletingId)} onClick={handleDelete} className="btn-primary bg-red-600 hover:bg-red-700">{deletingId ? "Deleting..." : "Confirm Delete"}</button></>}>
+        <p className="text-sm text-slate-600">Are you sure you want to delete {deleteTarget?.title}? This action cannot be undone.</p>
       </Modal>
     </Layout>
   );

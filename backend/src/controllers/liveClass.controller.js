@@ -89,7 +89,10 @@ const startClass = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, liveClass, "Live class started"));
   } catch (error) {
     try { await liveKit.deleteRoom(roomName); } catch (_) { /* room may not have been created */ }
-    await LiveClass.updateOne({ _id: claimed._id, status: "starting" }, { $set: { status: "scheduled" }, $unset: { roomName: 1 } });
+    await LiveClass.updateOne(
+      { _id: claimed._id, teacher: req.user._id, status: "starting" },
+      { $set: { status: "scheduled" }, $unset: { roomName: 1 } }
+    );
     if (error instanceof ApiError) throw error;
     throw safeLiveKitError(error);
   }

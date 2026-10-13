@@ -1,17 +1,20 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Star, Users, Clock } from "lucide-react";
 import { formatCurrency } from "../../utils/constants";
 
-const CourseCard = ({ course }) => {
+const CourseCard = ({ course, enrollmentStatus = "not-applicable" }) => {
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const price = course.discountPrice > 0 ? course.discountPrice : course.price;
   const hasDiscount = course.discountPrice > 0 && course.discountPrice < course.price;
+
+  useEffect(() => setThumbnailFailed(false), [course.thumbnail]);
 
   return (
     <Link to={`/courses/${course.slug || course._id}`} className="card overflow-hidden group flex flex-col">
       <div className="h-36 bg-brand-gradient-soft relative overflow-hidden flex items-center justify-center">
-        {course.thumbnail ? (
-          <img src={course.thumbnail} alt={course.title} className="w-full h-full object-cover" />
+        {course.thumbnail && !thumbnailFailed ? (
+          <img src={course.thumbnail} alt={`${course.title} course cover`} onError={() => setThumbnailFailed(true)} className="w-full h-full object-cover" />
         ) : (
           <span className="text-4xl font-black text-brand-200 select-none">{course.subject?.[0] || "C"}</span>
         )}
@@ -36,7 +39,13 @@ const CourseCard = ({ course }) => {
           )}
         </div>
         <div className="mt-auto pt-2 flex items-center gap-2">
-          {price > 0 ? (
+          {enrollmentStatus === "enrolled" ? (
+            <span className="badge badge-green inline-flex items-center gap-1">Enrolled ✓</span>
+          ) : enrollmentStatus === "loading" ? (
+            <span className="text-xs text-slate-500">Checking enrollment…</span>
+          ) : enrollmentStatus === "error" ? (
+            <span className="text-xs text-amber-700">Enrollment status unavailable</span>
+          ) : price > 0 ? (
             <>
               <span className="font-bold text-slate-900">{formatCurrency(price)}</span>
               {hasDiscount && <span className="text-xs text-slate-400 line-through">{formatCurrency(course.price)}</span>}

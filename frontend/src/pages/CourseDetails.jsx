@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Star, Users, Clock, BadgeCheck, CheckCircle2, PlayCircle } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -12,11 +12,40 @@ import { formatCurrency } from "../utils/constants";
 
 const CourseDetails = () => {
   const { idOrSlug } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [course, setCourse] = useState(null);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [enrolling, setEnrolling] = useState(false);
+  const [enrollmentStatus, setEnrollmentStatus] = useState("loading");
+  const enrollmentRequestId = useRef(0);
+
+  const refreshEnrollmentStatus = useCallback(async (preserveCurrentOnError = false) => {
+    const requestId = ++enrollmentRequestId.current;
+    if (user?.role !== "student") {
+      setEnrollmentStatus("not-enrolled");
+      return;
+    }
+    if (!preserveCurrentOnError) setEnrollmentStatus("loading");
+    try {
+      const enrollments = await enrollmentApi.mine();
+      if (requestId !== enrollmentRequestId.current) return;
+      const isEnrolled = (enrollments || []).some((item) => {
+        const enrolledCourse = item.course;
+        const enrolledCourseId = typeof enrolledCourse === "object" ? enrolledCourse?._id : enrolledCourse;
+        return String(enrolledCourseId) === String(course?._id);
+      });
+      setEnrollmentStatus(isEnrolled ? "enrolled" : "not-enrolled");
+    } catch (_) {
+      if (!preserveCurrentOnError && requestId === enrollmentRequestId.current) setEnrollmentStatus("error");
+    }
+  }, [course?._id, user?._id, user?.id, user?.role]);
+
+  useEffect(() => {
+    if (authLoading) enrollmentRequestId.current += 1;
+    else refreshEnrollmentStatus();
+  }, [authLoading, refreshEnrollmentStatus]);
 
   useEffect(() => {
     courseApi
@@ -26,7 +55,10 @@ const CourseDetails = () => {
       .finally(() => setLoading(false));
   }, [idOrSlug]);
 
+  useEffect(() => setThumbnailFailed(false), [course?.thumbnail]);
+
   const handleEnroll = async () => {
+    if (user?.role === "student" && enrollmentStatus !== "not-enrolled") return;
     if (!user) return navigate("/login");
     setEnrolling(true);
     try {
@@ -40,7 +72,8 @@ const CourseDetails = () => {
         await enrollmentApi.enroll({ courseId: course._id });
       }
       toast.success("Enrolled successfully!");
-      navigate("/dashboard");
+      setEnrollmentStatus("enrolled");
+      refreshEnrollmentStatus(true);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -52,12 +85,16 @@ const CourseDetails = () => {
   if (!course) return null;
 
   const price = course.discountPrice > 0 ? course.discountPrice : course.price;
+  const ownerId = typeof course.teacher === "object" ? course.teacher?._id : course.teacher;
+  const isOwner = user?.role === "teacher" && String(user?._id || user?.id) === String(ownerId);
+  const isEnrolledStudent = user?.role === "student" && enrollmentStatus === "enrolled";
 
   return (
     <Layout>
       <div className="bg-brand-gradient-soft border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2">
+            {course.thumbnail && !thumbnailFailed && <img src={course.thumbnail} alt={`${course.title} course cover`} onError={() => setThumbnailFailed(true)} className="w-full aspect-video object-cover rounded-2xl mb-6" />}
             <span className="badge-brand bg-white mb-4">{course.subject}</span>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-tight mb-4">{course.title}</h1>
             <p className="text-slate-600 mb-5">{course.description}</p>
@@ -80,7 +117,7 @@ const CourseDetails = () => {
           </div>
 
           <div className="card p-6 h-fit sticky top-24">
-            <div className="mb-4">
+            {(!isOwner && user?.role === "student" && enrollmentStatus !== "not-enrolled") ? null : <div className="mb-4">
               {price > 0 ? (
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-extrabold text-slate-900">{formatCurrency(price)}</span>
@@ -89,11 +126,11 @@ const CourseDetails = () => {
               ) : (
                 <span className="text-3xl font-extrabold text-emerald-600">Free</span>
               )}
-            </div>
-            <button onClick={handleEnroll} disabled={enrolling} className="btn-primary w-full justify-center py-3 mb-3">
+            </div>}
+            {isOwner ? <Link to={`/teacher/courses/${course._id}/edit`} className="btn-primary w-full justify-center py-3 mb-3">Edit your course</Link> : isEnrolledStudent ? <button type="button" disabled className="btn-secondary w-full justify-center py-3 mb-3 cursor-default">Enrolled ✓</button> : user?.role === "student" && (enrollmentStatus === "loading" || enrollmentStatus === "error") ? <div className="mb-3 text-center">{enrollmentStatus === "loading" ? <span role="status" className="text-sm text-slate-500">Checking enrollment…</span> : <button type="button" onClick={() => refreshEnrollmentStatus()} className="btn-secondary w-full justify-center">Retry enrollment check</button>}</div> : <><button onClick={handleEnroll} disabled={enrolling} className="btn-primary w-full justify-center py-3 mb-3">
               {enrolling ? "Processing..." : price > 0 ? "Buy & Enroll" : "Enroll for free"}
             </button>
-            <p className="text-xs text-center text-slate-400">Instant access • Learn at your own pace</p>
+            <p className="text-xs text-center text-slate-400">Instant access • Learn at your own pace</p></>}
           </div>
         </div>
       </div>
